@@ -223,7 +223,7 @@ function parseRecipesHtml(html) {
     const idM = b.match(/content="([0-9a-f-]+)" itemprop="recipeId"/);
     const nameM = b.match(/itemprop="name">([\s\S]*?)<\/h2>/);
     const courseM = b.match(/itemprop="recipeCourse">([\s\S]*?)<\/span>/);
-    const catMs = [...b.matchAll(/<span>([^<]*)<\/span>\s*<meta content="[^"]*" itemprop="recipeCategory">/g)];
+    const catMs = [...b.matchAll(/content="([^"]*)" itemprop="recipeCategory"/g)];
     const yieldM = b.match(/itemprop="recipeYield">([\s\S]*?)<\/span>/);
     const prepM = b.match(/content="([^"]*)" itemprop="prepTime"/);
     const cookM = b.match(/content="([^"]*)" itemprop="cookTime"/);
@@ -247,7 +247,7 @@ function parseRecipesHtml(html) {
       id: idM ? idM[1] : null,
       name: nameM ? clean(nameM[1]) : '',
       course: courseM ? clean(courseM[1]) : '',
-      categories: catMs.map(c => clean(c[1])).filter(Boolean),
+      categories: catMs.map(c => clean(c[1])).filter(Boolean).filter(c => !/^week\s*\d+$/i.test(c)),
       servings: yieldM ? clean(yieldM[1]) : '',
       totalMin,
       ingredients,
