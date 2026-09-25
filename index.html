@@ -4,6 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Meal Picker</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#c1622b">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
   :root {
@@ -82,6 +86,22 @@
   .empty { color: var(--muted); text-align: center; padding: 30px 10px; font-size: 0.9rem; }
   .status { color: var(--muted); text-align: center; padding: 40px 10px; font-size: 0.9rem; }
   .status.error { color: #b3261e; }
+  .recipe-actions { float: right; display: flex; gap: 6px; }
+  .shop-list li.checked { text-decoration: line-through; color: var(--muted); }
+  .shop-list label { display: flex; gap: 8px; align-items: flex-start; cursor: pointer; }
+  .shop-list input[type=checkbox] { margin-top: 3px; accent-color: var(--accent); flex-shrink: 0; }
+  details.browse { margin-top: 14px; }
+  details.browse summary { font-weight: 600; font-size: 0.9rem; color: var(--text); cursor: pointer; }
+  input[type=search] {
+    width: 100%; font-size: 0.95rem; padding: 9px 12px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--bg); color: var(--text); margin: 10px 0;
+  }
+  .browse-list { max-height: 320px; overflow-y: auto; }
+  .browse-row {
+    display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 0.88rem;
+  }
+  .browse-row:last-child { border-bottom: none; }
 </style>
 </head>
 <body>
@@ -98,8 +118,19 @@
   </div>
 
   <div class="card">
+    <label class="field-label">How many people are you cooking for?</label>
+    <input type="number" id="peopleCount" min="1" max="20" value="4">
+    <div class="count-note">Ingredient amounts scale to this automatically.</div>
+  </div>
+
+  <div class="card">
     <label class="field-label">Vibe (choose any, or none for anything)</label>
     <div class="chips" id="vibeChips"></div>
+  </div>
+
+  <div class="card" id="categoryCard" style="display:none">
+    <label class="field-label">Dietary / category (choose any, or none for anything)</label>
+    <div class="chips" id="categoryChips"></div>
   </div>
 
   <div class="card">
@@ -112,6 +143,12 @@
 
   <button class="primary" id="generateBtn">Give me recipes</button>
   <div class="count-note" id="recipeCountNote"></div>
+
+  <details class="browse">
+    <summary>Or pick a specific recipe yourself</summary>
+    <input type="search" id="browseSearch" placeholder="Search recipes by name&hellip;">
+    <div class="browse-list" id="browseList"></div>
+  </details>
 
   <div id="results"></div>
 </div>
@@ -142,6 +179,10 @@ const VIBE_KEYWORDS = {
   "Veggie / plant-based": ["vegetarian","vegan","tofu","halloumi","chickpea","lentil","bean"],
 };
 
+const MAKE_AHEAD_KEYWORDS = ["casserole","stew","curry","chilli","chili","dal","tagine","lasagne","bake","traybake","tray bake","gratin","pie","ragu","goulash","risotto","soup","braised","braise","slow cooker","slow-cooked","hotpot","dauphinoise","cottage pie","shepherd","meatballs","enchilada","moussaka"];
+const MAKE_AHEAD_EXCLUDE = ["salad","stir-fry","stir fry","ceviche","tartare","sashimi","carpaccio","sushi"];
+const MAKE_AHEAD_MAX_INGREDIENTS = 14;
+
 function decodeEntities(s) {
   const t = document.createElement('textarea');
   t.innerHTML = s;
@@ -166,6 +207,12 @@ function tagVibes(r) {
     if (kws.some(kw => text.includes(kw))) tags.add(vibe);
   }
   if (tags.size === 0) tags.add('Everyday');
+
+  const isMakeAheadDish = MAKE_AHEAD_KEYWORDS.some(kw => text.includes(kw));
+  const isExcluded = MAKE_AHEAD_EXCLUDE.some(kw => text.includes(kw));
+  const isSimpleEnough = (r.ingredients || []).length <= MAKE_AHEAD_MAX_INGREDIENTS;
+  if (isMakeAheadDish && !isExcluded && isSimpleEnough) tags.add('Friends round for dinner');
+
   return [...tags].sort();
 }
 
@@ -246,7 +293,29 @@ function normalizeIngredient(raw) {
   else if (key.endsWith('ses')) key = key.slice(0, -2);
   else if (key.endsWith('s') && !key.endsWith('ss')) key = key.slice(0, -1);
 
-  return { qty, unit, name: mainName, key, raw };
+  return { qty, unit, name: mainName, fullName: name, key, raw };
+}
+
+// ---------- Servings scaling ----------
+function parseServingsNum(s) {
+  if (!s) return null;
+  const m = String(s).match(/\d+/);
+  return m ? parseInt(m[0], 10) : null;
+}
+
+function scaleIngredientLine(raw, factor) {
+  if (!factor || factor === 1) return raw;
+  const p = normalizeIngredient(raw);
+  if (p.qty == null) return raw; // nothing to scale
+  const scaledQty = formatQty(p.qty * factor);
+  return p.unit ? `${scaledQty} ${p.unit} ${p.fullName}` : `${scaledQty} ${p.fullName}`;
+}
+
+function scaledIngredients(r) {
+  const wanted = parseInt(document.getElementById('peopleCount').value, 10) || null;
+  const base = parseServingsNum(r.servings);
+  const factor = (wanted && base) ? wanted / base : 1;
+  return r.ingredients.map(i => scaleIngredientLine(i, factor));
 }
 
 function formatQty(q) {
@@ -261,7 +330,7 @@ function formatQty(q) {
 function buildShoppingList(recipes) {
   const groups = {};
   recipes.forEach(r => {
-    r.ingredients.forEach(raw => {
+    scaledIngredients(r).forEach(raw => {
       const t = raw.trim();
       if (!t) return;
       const p = normalizeIngredient(t);
@@ -287,10 +356,33 @@ function buildShoppingList(recipes) {
     });
 }
 
+// ---------- Local storage helpers ----------
+const RECENT_DAYS = 10;
+function loadJSON(key, fallback) {
+  try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; }
+  catch (e) { return fallback; }
+}
+function saveJSON(key, val) {
+  try { localStorage.setItem(key, JSON.stringify(val)); } catch (e) {}
+}
+function recordRecentPicks(recipes) {
+  const recent = loadJSON('mealPicker.recent', {});
+  const now = Date.now();
+  recipes.forEach(r => { recent[r.id] = now; });
+  saveJSON('mealPicker.recent', recent);
+}
+function isRecentlyPicked(id) {
+  const recent = loadJSON('mealPicker.recent', {});
+  const ts = recent[id];
+  if (!ts) return false;
+  return (Date.now() - ts) < RECENT_DAYS * 24 * 60 * 60 * 1000;
+}
+
 // ---------- App ----------
 let RECIPES = [];
 let currentPicks = [];
 const selectedVibes = new Set();
+const selectedCategories = new Set();
 
 async function loadRecipes() {
   const statusEl = document.getElementById('loadStatus');
@@ -309,6 +401,8 @@ async function loadRecipes() {
     document.getElementById('app').style.display = 'block';
     document.getElementById('recipeCountNote').textContent = RECIPES.length + ' recipes loaded';
     initVibeChips();
+    initCategoryChips();
+    initBrowse();
   } catch (err) {
     statusEl.textContent = 'Could not load recipes.zip: ' + err.message;
     statusEl.classList.add('error');
@@ -316,7 +410,7 @@ async function loadRecipes() {
 }
 
 function initVibeChips() {
-  const vibes = ["Light & fresh","Warming & cosy","Spicy","Comfort food","Hearty & meaty","Veggie / plant-based","Everyday"];
+  const vibes = ["Light & fresh","Warming & cosy","Spicy","Comfort food","Hearty & meaty","Veggie / plant-based","Friends round for dinner","Everyday"];
   const el = document.getElementById('vibeChips');
   vibes.forEach(v => {
     const chip = document.createElement('div');
@@ -336,9 +430,57 @@ function initVibeChips() {
   document.getElementById('generateBtn').onclick = () => {
     const count = Math.max(1, Math.min(15, parseInt(document.getElementById('mealCount').value, 10) || 1));
     currentPicks = pickRandom(count, []);
+    recordRecentPicks(currentPicks);
     renderResults();
     document.getElementById('results').scrollIntoView({behavior:'smooth', block:'start'});
   };
+}
+
+function initCategoryChips() {
+  const cats = new Set();
+  RECIPES.forEach(r => (r.categories || []).forEach(c => cats.add(c)));
+  if (cats.size === 0) return;
+  document.getElementById('categoryCard').style.display = 'block';
+  const el = document.getElementById('categoryChips');
+  [...cats].sort().forEach(c => {
+    const chip = document.createElement('div');
+    chip.className = 'chip';
+    chip.textContent = c;
+    chip.onclick = () => {
+      if (selectedCategories.has(c)) { selectedCategories.delete(c); chip.classList.remove('active'); }
+      else { selectedCategories.add(c); chip.classList.add('active'); }
+    };
+    el.appendChild(chip);
+  });
+}
+
+function initBrowse() {
+  const searchEl = document.getElementById('browseSearch');
+  const renderBrowse = () => {
+    const q = searchEl.value.trim().toLowerCase();
+    const listEl = document.getElementById('browseList');
+    if (!q) { listEl.innerHTML = ''; return; }
+    const matches = RECIPES.filter(r => r.name.toLowerCase().includes(q)).slice(0, 25);
+    listEl.innerHTML = matches.map(r =>
+      `<div class="browse-row"><span>${r.name}</span><button class="secondary" onclick="addRecipe('${r.id}')">Add</button></div>`
+    ).join('') || '<div class="browse-row">No matches</div>';
+  };
+  searchEl.oninput = renderBrowse;
+}
+
+function addRecipe(id) {
+  if (currentPicks.some(r => r.id === id)) return;
+  const r = RECIPES.find(x => x.id === id);
+  if (!r) return;
+  currentPicks.push(r);
+  recordRecentPicks([r]);
+  renderResults();
+  document.getElementById('results').scrollIntoView({behavior:'smooth', block:'start'});
+}
+
+function removeRecipe(id) {
+  currentPicks = currentPicks.filter(r => r.id !== id);
+  renderResults();
 }
 
 function pool() {
@@ -346,13 +488,17 @@ function pool() {
   return RECIPES.filter(r => {
     if (r.totalMin != null && r.totalMin > maxT) return false;
     if (selectedVibes.size > 0 && !r.vibes.some(v => selectedVibes.has(v))) return false;
+    if (selectedCategories.size > 0 && !(r.categories || []).some(c => selectedCategories.has(c))) return false;
     return true;
   });
 }
 
 function pickRandom(count, exclude) {
-  const p = pool().filter(r => !exclude.includes(r.id));
-  const shuffled = p.slice().sort(() => Math.random() - 0.5);
+  const base = pool().filter(r => !exclude.includes(r.id));
+  const fresh = base.filter(r => !isRecentlyPicked(r.id));
+  // Prefer recipes not picked recently; only fall back to recent ones if the fresh pool can't fill the request
+  const usable = fresh.length >= count ? fresh : base;
+  const shuffled = usable.slice().sort(() => Math.random() - 0.5);
   return shuffled.slice(0, count);
 }
 
@@ -369,9 +515,12 @@ function renderResults() {
   }
   let html = '';
   currentPicks.forEach(r => {
-    const ingList = r.ingredients.map(i => `<li>${i}</li>`).join('');
+    const ingList = scaledIngredients(r).map(i => `<li>${i}</li>`).join('');
     html += `<div class="recipe">
-      <button class="secondary swap-btn" onclick="swapRecipe('${r.id}')">Swap</button>
+      <div class="recipe-actions">
+        <button class="secondary" onclick="swapRecipe('${r.id}')">Swap</button>
+        <button class="secondary" onclick="removeRecipe('${r.id}')">Remove</button>
+      </div>
       <h3>${r.name}</h3>
       <div class="meta">${timeLabel(r)} &middot; serves ${r.servings || '?'} &middot; ${r.course}</div>
       <div>${r.vibes.map(v => `<span class="tagline">${v}</span>`).join('')}</div>
@@ -379,21 +528,42 @@ function renderResults() {
     </div>`;
   });
 
+  const checkedSet = new Set(loadJSON('mealPicker.checked', []));
   html += `<div class="shopping"><h2>Combined shopping list</h2><ul class="shop-list">`;
-  buildShoppingList(currentPicks).forEach(line => { html += `<li>${line}</li>`; });
+  buildShoppingList(currentPicks).forEach((line, i) => {
+    const isChecked = checkedSet.has(line);
+    html += `<li class="${isChecked ? 'checked' : ''}"><label>
+      <input type="checkbox" ${isChecked ? 'checked' : ''} onchange="toggleChecked(this, '${line.replace(/'/g, "\\'")}')">
+      <span>${line}</span>
+    </label></li>`;
+  });
   html += `</ul></div>`;
 
   el.innerHTML = html;
+}
+
+function toggleChecked(input, line) {
+  const checkedSet = new Set(loadJSON('mealPicker.checked', []));
+  if (input.checked) checkedSet.add(line); else checkedSet.delete(line);
+  saveJSON('mealPicker.checked', [...checkedSet]);
+  input.closest('li').classList.toggle('checked', input.checked);
 }
 
 function swapRecipe(id) {
   const replacement = pickRandom(1, currentPicks.map(r => r.id));
   if (replacement.length === 0) return;
   const idx = currentPicks.findIndex(r => r.id === id);
-  if (idx !== -1) { currentPicks[idx] = replacement[0]; renderResults(); }
+  if (idx !== -1) {
+    currentPicks[idx] = replacement[0];
+    recordRecentPicks([replacement[0]]);
+    renderResults();
+  }
 }
 
 loadRecipes();
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+}
 </script>
 </body>
 </html>

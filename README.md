@@ -19,6 +19,14 @@ nothing to rebuild or reprocess when you update your recipes.
 4. GitHub will give you a URL like `https://<username>.github.io/<repo>/`
    within a minute or two. That's your shareable link.
 
+## Installing it as an app
+
+Since `manifest.json` and `sw.js` are included, Chrome (and most mobile
+browsers) will offer a proper **"Install app"** option — not just a
+shortcut — once the site is live. On Android/Chrome, open the site, tap
+the **⋮** menu, and look for "Install app". It'll then open full-screen
+from your home screen, without Chrome's address bar.
+
 ## Updating your recipes
 
 Whenever you add new recipes in Recipe Keeper:
@@ -60,3 +68,18 @@ currently display them).
   each needing "2 tomatoes" become one line reading "4 tomatoes"). It can
   only add quantities together when the unit matches — different units for
   the same ingredient are kept as separate lines.
+
+## Other features
+
+- **People count**: set how many you're cooking for and ingredient
+  quantities scale automatically from each recipe's own serving size.
+- **Recently picked avoidance**: the app remembers (in your browser's local
+  storage, on your device only) which recipes you've generated in the last
+  10 days and avoids repeating them, unless your filters are narrow enough
+  that it has no choice.
+- **Dietary/category filter**: any categories you've tagged in Recipe
+  Keeper (e.g. "Vegetarian") appear as filter chips automatically.
+- **Manual pick**: the "Or pick a specific recipe yourself" search lets you
+  add a named recipe directly instead of relying on the random shuffle.
+- **Shopping list checkboxes**: tick items off as you shop; ticked state is
+  remembered on your device until you next generate a fresh list.
