@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Meal Picker</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+  :root {
+    --bg: #faf8f5; --surface: #fff; --border: #e4dfd6; --text: #2b2620;
+    --muted: #7a7266; --accent: #c1622b; --accent-text: #fff; --chip-bg: #f1ede4;
+    --chip-active: #2b2620; --chip-active-text: #fff;
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #1c1a17; --surface: #262320; --border: #3a352e; --text: #f2ede4;
+      --muted: #a89f8f; --accent: #e07b3f; --accent-text: #1c1a17; --chip-bg: #322e28;
+      --chip-active: #e07b3f; --chip-active-text: #1c1a17;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #1c1a17; --surface: #262320; --border: #3a352e; --text: #f2ede4;
+    --muted: #a89f8f; --accent: #e07b3f; --accent-text: #1c1a17; --chip-bg: #322e28;
+    --chip-active: #e07b3f; --chip-active-text: #1c1a17;
+  }
+  html { scroll-padding-top: env(safe-area-inset-top, 0px); background: var(--bg); }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    max-width: 640px; margin-inline: auto; padding: 20px 16px 60px;
+  }
+  h1 { font-size: 1.4rem; margin: 4px 0 2px; }
+  .sub { color: var(--muted); font-size: 0.9rem; margin-bottom: 20px; }
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+    padding: 16px; margin-bottom: 14px;
+  }
+  label.field-label { display: block; font-weight: 600; font-size: 0.9rem; margin-bottom: 8px; }
+  .row { display: flex; align-items: center; gap: 10px; }
+  input[type=number] {
+    width: 70px; font-size: 1.1rem; padding: 8px 10px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--bg); color: var(--text);
+  }
+  input[type=range] { flex: 1; accent-color: var(--accent); }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip {
+    padding: 7px 13px; border-radius: 999px; border: 1px solid var(--border);
+    background: var(--chip-bg); color: var(--text); font-size: 0.88rem; cursor: pointer;
+    user-select: none; -webkit-tap-highlight-color: transparent;
+  }
+  .chip.active { background: var(--chip-active); color: var(--chip-active-text); border-color: var(--chip-active); }
+  .timeval { min-width: 70px; text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); font-size: 0.9rem; }
+  button.primary {
+    width: 100%; padding: 14px; border-radius: 12px; border: none;
+    background: var(--accent); color: var(--accent-text); font-size: 1rem; font-weight: 700;
+    cursor: pointer; margin-top: 6px;
+  }
+  button.primary:disabled { opacity: 0.5; cursor: default; }
+  button.secondary {
+    padding: 9px 14px; border-radius: 10px; border: 1px solid var(--border);
+    background: var(--surface); color: var(--text); font-size: 0.85rem; cursor: pointer;
+  }
+  .count-note { color: var(--muted); font-size: 0.82rem; margin-top: 8px; }
+  #results { margin-top: 18px; }
+  .recipe {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+    padding: 14px 16px; margin-bottom: 10px;
+  }
+  .recipe h3 { margin: 0 0 4px; font-size: 1.05rem; }
+  .meta { color: var(--muted); font-size: 0.82rem; margin-bottom: 6px; }
+  .tagline { display: inline-block; font-size: 0.75rem; background: var(--chip-bg); border-radius: 999px; padding: 2px 9px; margin-right: 5px; margin-bottom: 4px; }
+  details summary { cursor: pointer; font-size: 0.85rem; color: var(--accent); margin-top: 4px; }
+  details ul { margin: 8px 0 0; padding-left: 18px; font-size: 0.9rem; }
+  .swap-btn { float: right; font-size: 0.78rem; }
+  .shopping { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px; margin-top: 16px; }
+  .shopping h2 { font-size: 1.05rem; margin: 0 0 10px; }
+  .shopping ul.shop-list { margin: 0; padding-left: 18px; font-size: 0.9rem; }
+  .empty { color: var(--muted); text-align: center; padding: 30px 10px; font-size: 0.9rem; }
+  .status { color: var(--muted); text-align: center; padding: 40px 10px; font-size: 0.9rem; }
+  .status.error { color: #b3261e; }
+</style>
+</head>
+<body>
+
+<h1>What&rsquo;s for dinner?</h1>
+<div class="sub">Pick a mood, a max cooking time, and how many meals &mdash; from your Recipe Keeper collection.</div>
+
+<div id="loadStatus" class="status">Loading your recipes&hellip;</div>
+
+<div id="app" style="display:none">
+  <div class="card">
+    <label class="field-label">How many meals?</label>
+    <input type="number" id="mealCount" min="1" max="15" value="3">
+  </div>
+
+  <div class="card">
+    <label class="field-label">Vibe (choose any, or none for anything)</label>
+    <div class="chips" id="vibeChips"></div>
+  </div>
+
+  <div class="card">
+    <label class="field-label">Max cooking time (prep + cook)</label>
+    <div class="row">
+      <input type="range" id="maxTime" min="10" max="90" step="5" value="60">
+      <span class="timeval" id="maxTimeLabel">60 min</span>
+    </div>
+  </div>
+
+  <button class="primary" id="generateBtn">Give me recipes</button>
+  <div class="count-note" id="recipeCountNote"></div>
+
+  <div id="results"></div>
+</div>
+
+<script>
+// ---------- Recipe Keeper HTML export parser ----------
+const UNIT_MAP = {
+  g:'g', gram:'g', grams:'g', kg:'kg', kilogram:'kg', kilograms:'kg',
+  ml:'ml', millilitre:'ml', millilitres:'ml', milliliter:'ml', milliliters:'ml',
+  l:'l', litre:'l', litres:'l', liter:'l', liters:'l',
+  tsp:'tsp', tsps:'tsp', teaspoon:'tsp', teaspoons:'tsp',
+  tbsp:'tbsp', tbsps:'tbsp', tablespoon:'tbsp', tablespoons:'tbsp',
+  cup:'cup', cups:'cup', clove:'clove', cloves:'clove',
+  lb:'lb', lbs:'lb', pound:'lb', pounds:'lb', oz:'oz', ounce:'oz', ounces:'oz',
+  pinch:'pinch', pinches:'pinch', handful:'handful', handfuls:'handful',
+  sprig:'sprig', sprigs:'sprig', can:'can', cans:'can', tin:'can', tins:'can',
+  slice:'slice', slices:'slice', bunch:'bunch', bunches:'bunch',
+  stick:'stick', sticks:'stick', fillet:'fillet', fillets:'fillet',
+  pack:'pack', packs:'pack', packet:'pack', packets:'pack'
+};
+
+const VIBE_KEYWORDS = {
+  "Light & fresh": ["salad","bowl","zesty","ceviche","summer","fresh","citrus","wrap","slaw"],
+  "Warming & cosy": ["stew","soup","curry","casserole","chilli","chili","dal","ragu","bake","roast","hotpot","broth","goulash","pie","risotto","gratin"],
+  "Spicy": ["chilli","chili","harissa","sriracha","arrabbiata","cajun","jerk","curry","kimchi","gochujang","hot sauce","fiery","tandoori"],
+  "Comfort food": ["pie","mac ","cheese","burger","pasta","lasagne","dumpling","pizza","fritter","gratin","mash"],
+  "Hearty & meaty": ["beef","lamb","pork","steak","meatball","sausage","chorizo","bacon","chicken thigh","brisket","mince"],
+  "Veggie / plant-based": ["vegetarian","vegan","tofu","halloumi","chickpea","lentil","bean"],
+};
+
+function decodeEntities(s) {
+  const t = document.createElement('textarea');
+  t.innerHTML = s;
+  return t.value;
+}
+function stripTags(s) { return s.replace(/<[^>]+>/g, ''); }
+function clean(s) { return s == null ? '' : stripTags(decodeEntities(s)).trim(); }
+
+function parseIsoMinutes(s) {
+  if (!s) return null;
+  const m = s.match(/PT(?:(\d+)H)?(?:(\d+)M)?/);
+  if (!m) return null;
+  const h = m[1] ? parseInt(m[1], 10) : 0;
+  const mi = m[2] ? parseInt(m[2], 10) : 0;
+  return h * 60 + mi;
+}
+
+function tagVibes(r) {
+  const text = [r.name, r.course, (r.categories || []).join(' ')].join(' ').toLowerCase();
+  const tags = new Set();
+  for (const [vibe, kws] of Object.entries(VIBE_KEYWORDS)) {
+    if (kws.some(kw => text.includes(kw))) tags.add(vibe);
+  }
+  if (tags.size === 0) tags.add('Everyday');
+  return [...tags].sort();
+}
+
+function parseRecipesHtml(html) {
+  const blocks = html.split(/(?=<meta content="[0-9a-f-]+" itemprop="recipeId">)/).slice(1);
+  const recipes = [];
+  for (const b of blocks) {
+    const idM = b.match(/content="([0-9a-f-]+)" itemprop="recipeId"/);
+    const nameM = b.match(/itemprop="name">([\s\S]*?)<\/h2>/);
+    const courseM = b.match(/itemprop="recipeCourse">([\s\S]*?)<\/span>/);
+    const catMs = [...b.matchAll(/<span>([^<]*)<\/span>\s*<meta content="[^"]*" itemprop="recipeCategory">/g)];
+    const yieldM = b.match(/itemprop="recipeYield">([\s\S]*?)<\/span>/);
+    const prepM = b.match(/content="([^"]*)" itemprop="prepTime"/);
+    const cookM = b.match(/content="([^"]*)" itemprop="cookTime"/);
+    const ingM = b.match(/itemprop="recipeIngredients">([\s\S]*?)<\/div>/);
+
+    const ingredients = [];
+    if (ingM) {
+      const paras = [...ingM[1].matchAll(/<p>([\s\S]*?)<\/p>/g)];
+      for (const p of paras) {
+        const t = clean(p[1]);
+        if (t) ingredients.push(t);
+      }
+    }
+
+    const prepMin = prepM ? parseIsoMinutes(prepM[1]) : null;
+    const cookMin = cookM ? parseIsoMinutes(cookM[1]) : null;
+    let totalMin = (prepMin || 0) + (cookMin || 0);
+    if (!prepMin && !cookMin) totalMin = null;
+
+    const r = {
+      id: idM ? idM[1] : null,
+      name: nameM ? clean(nameM[1]) : '',
+      course: courseM ? clean(courseM[1]) : '',
+      categories: catMs.map(c => clean(c[1])).filter(Boolean),
+      servings: yieldM ? clean(yieldM[1]) : '',
+      totalMin,
+      ingredients,
+    };
+    r.vibes = tagVibes(r);
+    if (r.name) recipes.push(r);
+  }
+  return recipes;
+}
+
+// ---------- Shopping list merge ----------
+const FRAC_MAP = {'¼':'1/4','½':'1/2','¾':'3/4','⅓':'1/3','⅔':'2/3','⅕':'1/5','⅛':'1/8','⅜':'3/8','⅝':'5/8','⅞':'7/8'};
+const DECIMAL_TO_FRAC = [[0.25,'¼'],[0.5,'½'],[0.75,'¾'],[0.333,'⅓'],[0.667,'⅔']];
+
+function parseFrac(f) { const [n,d] = f.split('/').map(Number); return n/d; }
+function parseMixedQty(str) {
+  if (str.includes(' ')) { const [w,f] = str.split(' '); return parseInt(w,10) + parseFrac(f); }
+  if (str.includes('/')) return parseFrac(str);
+  return parseFloat(str);
+}
+
+function normalizeIngredient(raw) {
+  let s = raw.trim();
+  Object.keys(FRAC_MAP).forEach(k => { s = s.split(k).join(' ' + FRAC_MAP[k]); });
+  s = s.replace(/\s+/g, ' ').trim();
+
+  const qtyMatch = s.match(/^(\d+\s+\d+\/\d+|\d+\/\d+|\d+\.\d+|\d+)\s*/);
+  let qty = null, rest = s;
+  if (qtyMatch) { qty = parseMixedQty(qtyMatch[1]); rest = s.slice(qtyMatch[0].length).trim(); }
+
+  let unit = null;
+  const words = rest.split(' ');
+  if (words.length) {
+    const w0 = words[0].toLowerCase().replace(/[^a-z]/g, '');
+    if (UNIT_MAP[w0]) { unit = UNIT_MAP[w0]; rest = words.slice(1).join(' '); }
+  }
+
+  const name = rest.trim();
+  const mainName = name.split(',')[0].trim();
+  let key = mainName.toLowerCase();
+  if (key.endsWith('oes')) key = key.slice(0, -2);
+  else if (key.endsWith('ies')) key = key.slice(0, -3) + 'y';
+  else if (key.endsWith('ses')) key = key.slice(0, -2);
+  else if (key.endsWith('s') && !key.endsWith('ss')) key = key.slice(0, -1);
+
+  return { qty, unit, name: mainName, key, raw };
+}
+
+function formatQty(q) {
+  const whole = Math.floor(q);
+  const frac = +(q - whole).toFixed(3);
+  if (frac === 0) return String(whole);
+  const match = DECIMAL_TO_FRAC.find(([d]) => Math.abs(d - frac) < 0.02);
+  const fracStr = match ? match[1] : frac.toFixed(2).replace(/0$/, '');
+  return whole > 0 ? `${whole} ${fracStr}` : fracStr;
+}
+
+function buildShoppingList(recipes) {
+  const groups = {};
+  recipes.forEach(r => {
+    r.ingredients.forEach(raw => {
+      const t = raw.trim();
+      if (!t) return;
+      const p = normalizeIngredient(t);
+      if (!p.name) return;
+      const groupKey = p.key + '|' + (p.unit || '');
+      if (!groups[groupKey]) groups[groupKey] = { name: p.name, unit: p.unit, qtySum: 0, hasQty: true, lines: [] };
+      const g = groups[groupKey];
+      g.lines.push(t);
+      if (p.qty != null) g.qtySum += p.qty; else g.hasQty = false;
+      if (p.name.length > g.name.length) g.name = p.name;
+    });
+  });
+
+  return Object.values(groups)
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map(g => {
+      if (g.hasQty) {
+        const qtyStr = formatQty(g.qtySum);
+        return g.unit ? `${qtyStr} ${g.unit} ${g.name}` : `${qtyStr} ${g.name}`;
+      }
+      if (g.lines.length > 1) return `${g.name} <span style="color:var(--muted);font-size:0.8em">(${g.lines.length}&times;, check amounts)</span>`;
+      return g.lines[0];
+    });
+}
+
+// ---------- App ----------
+let RECIPES = [];
+let currentPicks = [];
+const selectedVibes = new Set();
+
+async function loadRecipes() {
+  const statusEl = document.getElementById('loadStatus');
+  try {
+    const resp = await fetch('recipes.zip');
+    if (!resp.ok) throw new Error('recipes.zip not found (HTTP ' + resp.status + ')');
+    const buf = await resp.arrayBuffer();
+    const zip = await JSZip.loadAsync(buf);
+    const entry = zip.file('recipes.html');
+    if (!entry) throw new Error('recipes.html not found inside recipes.zip');
+    const html = await entry.async('string');
+    RECIPES = parseRecipesHtml(html);
+    if (RECIPES.length === 0) throw new Error('No recipes found in the export');
+
+    statusEl.style.display = 'none';
+    document.getElementById('app').style.display = 'block';
+    document.getElementById('recipeCountNote').textContent = RECIPES.length + ' recipes loaded';
+    initVibeChips();
+  } catch (err) {
+    statusEl.textContent = 'Could not load recipes.zip: ' + err.message;
+    statusEl.classList.add('error');
+  }
+}
+
+function initVibeChips() {
+  const vibes = ["Light & fresh","Warming & cosy","Spicy","Comfort food","Hearty & meaty","Veggie / plant-based","Everyday"];
+  const el = document.getElementById('vibeChips');
+  vibes.forEach(v => {
+    const chip = document.createElement('div');
+    chip.className = 'chip';
+    chip.textContent = v;
+    chip.onclick = () => {
+      if (selectedVibes.has(v)) { selectedVibes.delete(v); chip.classList.remove('active'); }
+      else { selectedVibes.add(v); chip.classList.add('active'); }
+    };
+    el.appendChild(chip);
+  });
+
+  const maxTimeEl = document.getElementById('maxTime');
+  const maxTimeLabel = document.getElementById('maxTimeLabel');
+  maxTimeEl.oninput = () => { maxTimeLabel.textContent = maxTimeEl.value + ' min'; };
+
+  document.getElementById('generateBtn').onclick = () => {
+    const count = Math.max(1, Math.min(15, parseInt(document.getElementById('mealCount').value, 10) || 1));
+    currentPicks = pickRandom(count, []);
+    renderResults();
+    document.getElementById('results').scrollIntoView({behavior:'smooth', block:'start'});
+  };
+}
+
+function pool() {
+  const maxT = parseInt(document.getElementById('maxTime').value, 10);
+  return RECIPES.filter(r => {
+    if (r.totalMin != null && r.totalMin > maxT) return false;
+    if (selectedVibes.size > 0 && !r.vibes.some(v => selectedVibes.has(v))) return false;
+    return true;
+  });
+}
+
+function pickRandom(count, exclude) {
+  const p = pool().filter(r => !exclude.includes(r.id));
+  const shuffled = p.slice().sort(() => Math.random() - 0.5);
+  return shuffled.slice(0, count);
+}
+
+function timeLabel(r) {
+  if (r.totalMin == null) return 'time not logged';
+  return r.totalMin + ' min total';
+}
+
+function renderResults() {
+  const el = document.getElementById('results');
+  if (currentPicks.length === 0) {
+    el.innerHTML = '<div class="empty">No recipes matched &mdash; try loosening the vibe or raising the time limit.</div>';
+    return;
+  }
+  let html = '';
+  currentPicks.forEach(r => {
+    const ingList = r.ingredients.map(i => `<li>${i}</li>`).join('');
+    html += `<div class="recipe">
+      <button class="secondary swap-btn" onclick="swapRecipe('${r.id}')">Swap</button>
+      <h3>${r.name}</h3>
+      <div class="meta">${timeLabel(r)} &middot; serves ${r.servings || '?'} &middot; ${r.course}</div>
+      <div>${r.vibes.map(v => `<span class="tagline">${v}</span>`).join('')}</div>
+      <details><summary>Ingredients (${r.ingredients.length})</summary><ul>${ingList}</ul></details>
+    </div>`;
+  });
+
+  html += `<div class="shopping"><h2>Combined shopping list</h2><ul class="shop-list">`;
+  buildShoppingList(currentPicks).forEach(line => { html += `<li>${line}</li>`; });
+  html += `</ul></div>`;
+
+  el.innerHTML = html;
+}
+
+function swapRecipe(id) {
+  const replacement = pickRandom(1, currentPicks.map(r => r.id));
+  if (replacement.length === 0) return;
+  const idx = currentPicks.findIndex(r => r.id === id);
+  if (idx !== -1) { currentPicks[idx] = replacement[0]; renderResults(); }
+}
+
+loadRecipes();
+</script>
+</body>
+</html>
