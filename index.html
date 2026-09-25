@@ -78,7 +78,8 @@
   .meta { color: var(--muted); font-size: 0.82rem; margin-bottom: 6px; }
   .tagline { display: inline-block; font-size: 0.75rem; background: var(--chip-bg); border-radius: 999px; padding: 2px 9px; margin-right: 5px; margin-bottom: 4px; }
   details summary { cursor: pointer; font-size: 0.85rem; color: var(--accent); margin-top: 4px; }
-  details ul { margin: 8px 0 0; padding-left: 18px; font-size: 0.9rem; }
+  details ul, details ol { margin: 8px 0 0; padding-left: 18px; font-size: 0.9rem; }
+  details li { margin-bottom: 6px; }
   .swap-btn { float: right; font-size: 0.78rem; }
   .shopping { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px; margin-top: 16px; }
   .shopping h2 { font-size: 1.05rem; margin: 0 0 10px; }
@@ -119,7 +120,7 @@
 
   <div class="card">
     <label class="field-label">How many people are you cooking for?</label>
-    <input type="number" id="peopleCount" min="1" max="20" value="2">
+    <input type="number" id="peopleCount" min="1" max="20" value="4">
     <div class="count-note">Ingredient amounts scale to this automatically.</div>
   </div>
 
@@ -229,6 +230,8 @@ function parseRecipesHtml(html) {
     const prepM = b.match(/content="([^"]*)" itemprop="prepTime"/);
     const cookM = b.match(/content="([^"]*)" itemprop="cookTime"/);
     const ingM = b.match(/itemprop="recipeIngredients">([\s\S]*?)<\/div>/);
+    const dirM = b.match(/itemprop="recipeDirections">([\s\S]*?)<\/div>/);
+    const sourceM = b.match(/itemprop="recipeSource"><a href="([^"]*)"/);
 
     const ingredients = [];
     if (ingM) {
@@ -236,6 +239,14 @@ function parseRecipesHtml(html) {
       for (const p of paras) {
         const t = clean(p[1]);
         if (t) ingredients.push(t);
+      }
+    }
+    const directions = [];
+    if (dirM) {
+      const paras = [...dirM[1].matchAll(/<p>([\s\S]*?)<\/p>/g)];
+      for (const p of paras) {
+        const t = clean(p[1]);
+        if (t) directions.push(t);
       }
     }
 
@@ -252,6 +263,8 @@ function parseRecipesHtml(html) {
       servings: yieldM ? clean(yieldM[1]) : '',
       totalMin,
       ingredients,
+      directions,
+      sourceUrl: sourceM ? sourceM[1] : null,
     };
     r.vibes = tagVibes(r);
     if (r.name) recipes.push(r);
@@ -526,6 +539,8 @@ function renderResults() {
       <div class="meta">${timeLabel(r)} &middot; serves ${r.servings || '?'} &middot; ${r.course}</div>
       <div>${r.vibes.map(v => `<span class="tagline">${v}</span>`).join('')}</div>
       <details><summary>Ingredients (${r.ingredients.length})</summary><ul>${ingList}</ul></details>
+      ${r.directions.length ? `<details><summary>Instructions</summary><ol>${r.directions.map(d => `<li>${d.replace(/^\d+\.\s*/, '')}</li>`).join('')}</ol></details>` : ''}
+      ${r.sourceUrl ? `<div class="meta"><a href="${r.sourceUrl}" target="_blank" rel="noopener">Original recipe &#8599;</a></div>` : ''}
     </div>`;
   });
 
