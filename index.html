@@ -288,15 +288,31 @@ function normalizeIngredient(raw) {
   Object.keys(FRAC_MAP).forEach(k => { s = s.split(k).join(' ' + FRAC_MAP[k]); });
   s = s.replace(/\s+/g, ' ').trim();
 
-  const qtyMatch = s.match(/^(\d+\s+\d+\/\d+|\d+\/\d+|\d+\.\d+|\d+)\s*/);
-  let qty = null, rest = s;
-  if (qtyMatch) { qty = parseMixedQty(qtyMatch[1]); rest = s.slice(qtyMatch[0].length).trim(); }
+  let qty = null, unit = null, rest = s;
 
-  let unit = null;
-  const words = rest.split(' ');
-  if (words.length) {
-    const w0 = words[0].toLowerCase().replace(/[^a-z]/g, '');
-    if (UNIT_MAP[w0]) { unit = UNIT_MAP[w0]; rest = words.slice(1).join(' '); }
+  // Leading quantity: "100g Spinach", "2 tbsp Olive oil"
+  const leadingMatch = s.match(/^(\d+\s+\d+\/\d+|\d+\/\d+|\d+\.\d+|\d+)\s*/);
+  if (leadingMatch) {
+    qty = parseMixedQty(leadingMatch[1]);
+    rest = s.slice(leadingMatch[0].length).trim();
+    const words = rest.split(' ');
+    if (words.length) {
+      const w0 = words[0].toLowerCase().replace(/[^a-z]/g, '');
+      if (UNIT_MAP[w0]) { unit = UNIT_MAP[w0]; rest = words.slice(1).join(' '); }
+    }
+  } else {
+    // Trailing parenthetical quantity: "Spinach (80g)", "Chicken stock mix (5.5g)"
+    const trailingParen = s.match(/^(.*?)\s*\(\s*(\d+(?:\.\d+)?)\s*([a-zA-Z]*)\s*\)\s*$/);
+    if (trailingParen) {
+      rest = trailingParen[1].trim();
+      qty = parseFloat(trailingParen[2]);
+      const u = trailingParen[3].toLowerCase();
+      if (UNIT_MAP[u]) unit = UNIT_MAP[u];
+    } else {
+      // Trailing multiplier: "Garlic clove x2"
+      const trailingX = s.match(/^(.*?)\s+[xX](\d+)\s*$/);
+      if (trailingX) { rest = trailingX[1].trim(); qty = parseInt(trailingX[2], 10); }
+    }
   }
 
   const name = rest.trim();
@@ -318,11 +334,11 @@ function parseServingsNum(s) {
 }
 
 function scaleIngredientLine(raw, factor) {
-  if (!factor || factor === 1) return raw;
+  const f = factor || 1;
   const p = normalizeIngredient(raw);
-  if (p.qty == null) return raw; // nothing to scale
-  const scaledQty = formatQty(p.qty * factor);
-  return p.unit ? `${scaledQty} ${p.unit} ${p.fullName}` : `${scaledQty} ${p.fullName}`;
+  if (p.qty == null) return raw; // no leading quantity to standardise (e.g. "Garnish", "to taste")
+  const scaledQty = formatQty(p.qty * f);
+  return `${joinQtyUnit(scaledQty, p.unit)} ${p.fullName}`;
 }
 
 function scaledIngredients(r) {
@@ -339,6 +355,10 @@ function formatQty(q) {
   const match = DECIMAL_TO_FRAC.find(([d]) => Math.abs(d - frac) < 0.02);
   const fracStr = match ? match[1] : frac.toFixed(2).replace(/0$/, '');
   return whole > 0 ? `${whole} ${fracStr}` : fracStr;
+}
+
+function joinQtyUnit(qtyStr, unit) {
+  return unit ? `${qtyStr} ${unit}` : qtyStr;
 }
 
 function buildShoppingList(recipes) {
@@ -363,7 +383,7 @@ function buildShoppingList(recipes) {
     .map(g => {
       if (g.hasQty) {
         const qtyStr = formatQty(g.qtySum);
-        return g.unit ? `${qtyStr} ${g.unit} ${g.name}` : `${qtyStr} ${g.name}`;
+        return `${joinQtyUnit(qtyStr, g.unit)} ${g.name}`;
       }
       if (g.lines.length > 1) return `${g.name} <span style="color:var(--muted);font-size:0.8em">(${g.lines.length}&times;, check amounts)</span>`;
       return g.lines[0];
