@@ -176,8 +176,9 @@ const VIBE_KEYWORDS = {
   "Spicy": ["chilli","chili","harissa","sriracha","arrabbiata","cajun","jerk","curry","kimchi","gochujang","hot sauce","fiery","tandoori"],
   "Comfort food": ["pie","mac ","cheese","burger","pasta","lasagne","dumpling","pizza","fritter","gratin","mash"],
   "Hearty & meaty": ["beef","lamb","pork","steak","meatball","sausage","chorizo","bacon","chicken thigh","brisket","mince"],
-  "Veggie / plant-based": ["vegetarian","vegan","tofu","halloumi","chickpea","lentil","bean"],
 };
+
+const CATEGORY_EXCLUDE = ["Anna", "Sauce", "Tart"];
 
 const MAKE_AHEAD_KEYWORDS = ["casserole","stew","curry","chilli","chili","dal","tagine","lasagne","bake","traybake","tray bake","gratin","pie","ragu","goulash","risotto","soup","braised","braise","slow cooker","slow-cooked","hotpot","dauphinoise","cottage pie","shepherd","meatballs","enchilada","moussaka"];
 const MAKE_AHEAD_EXCLUDE = ["salad","stir-fry","stir fry","ceviche","tartare","sashimi","carpaccio","sushi"];
@@ -247,7 +248,7 @@ function parseRecipesHtml(html) {
       id: idM ? idM[1] : null,
       name: nameM ? clean(nameM[1]) : '',
       course: courseM ? clean(courseM[1]) : '',
-      categories: catMs.map(c => clean(c[1])).filter(Boolean).filter(c => !/^week\s*\d+$/i.test(c)),
+      categories: catMs.map(c => clean(c[1])).filter(Boolean).filter(c => !/^week\s*\d+$/i.test(c)).filter(c => !CATEGORY_EXCLUDE.includes(c)),
       servings: yieldM ? clean(yieldM[1]) : '',
       totalMin,
       ingredients,
@@ -410,7 +411,7 @@ async function loadRecipes() {
 }
 
 function initVibeChips() {
-  const vibes = ["Light & fresh","Warming & cosy","Spicy","Comfort food","Hearty & meaty","Veggie / plant-based","Friends round for dinner","Everyday"];
+  const vibes = ["Light & fresh","Warming & cosy","Spicy","Comfort food","Hearty & meaty","Friends round for dinner"];
   const el = document.getElementById('vibeChips');
   vibes.forEach(v => {
     const chip = document.createElement('div');
